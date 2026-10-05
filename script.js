@@ -1,330 +1,3 @@
-const SUPABASE_URL = 'https://jsvlkwsozsgjmicibbjs.supabase.co';
-
-const SUPABASE_KEY = 'YOUR_PUBLISHABLE_KEY_HERE';
-
-const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-);
-
-let cloudReady = false;
-let cloudSyncTimer = null;
-
-let payments = [];
-let staffList = [];
-let studentAttendanceList = [];
-
-const BOOK_STAGES = [
-    'Juniors',
-    'Kiddos',
-    'Beginners',
-    'Movers',
-    'Flyers',
-    'Supers'
-];
-
-let booksStock = {
-    Juniors: 0,
-    Kiddos: 0,
-    Beginners: 0,
-    Movers: 0,
-    Flyers: 0,
-    Supers: 0
-};
-
-let syncPending = false;
-
-function setSyncStatus(state, message) {
-    const el = document.getElementById('syncStatus');
-    if (!el) return;
-    el.className = 'sync-status ' + state;
-    el.textContent = message;
-    el.title = message;
-}
-
-function readLocalJSON(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key)) || fallback; }
-    catch (err) { return fallback; }
-}
-
-function queueCloudSync() {
-    clearTimeout(cloudSyncTimer);
-
-    if (!cloudReady) {
-        setSyncStatus('error', 'Not synced - saved on this device only');
-        return;
-    }
-
-    syncPending = true;
-    setSyncStatus('saving', 'Saving...');
-
-    cloudSyncTimer = setTimeout(async () => {
-        await syncCoursadoToCloud();
-    }, 300);
-}
-
-async function syncCoursadoToCloud() {
-
-    // Safety: never push to the cloud before the cloud data has been loaded,
-    // otherwise empty/stale local data would overwrite the real records.
-    if (!cloudReady) {
-        console.warn('Cloud sync skipped: cloud data not loaded yet.');
-        setSyncStatus('error', 'Not synced - saved on this device only');
-        return false;
-    }
-
-    const { error } = await supabaseClient
-        .from('coursado_data')
-        .upsert({
-            id: 1,
-            payments: payments,
-            staff: staffList,
-            student_attendance: studentAttendanceList,
-            books_stock: booksStock,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'id'
-        });
-
-    if (error) {
-        console.error('Cloud sync failed:', error);
-        setSyncStatus('error', 'Cloud save failed: ' + error.message);
-        alert('Cloud save failed: ' + error.message);
-        return false;
-    }
-
-    syncPending = false;
-    setSyncStatus('ok', 'Saved to cloud');
-    console.log('Coursado data saved to Supabase.');
-    return true;
-}
-
-async function initializeCoursadoCloud(isRefresh = false) {
-
-    console.log('Loading Coursado data from Supabase...');
-    setSyncStatus('saving', 'Loading from cloud...');
-
-    // Keep a copy of what this device has, so it is never silently lost
-    const localSnapshot = {
-        payments: readLocalJSON('coursado_dashboard_payments', []),
-        staff: readLocalJSON('coursado_dashboard_staff', []),
-        students: readLocalJSON('coursado_student_attendance', []),
-        books: readLocalJSON('coursado_books_stock', {})
-    };
-
-    const { data, error } = await supabaseClient
-        .from('coursado_data')
-        .select('*')
-        .eq('id', 1)
-        .maybeSingle();
-
-    if (error) {
-        console.error('Cloud loading failed:', error);
-        setSyncStatus('error', 'Cloud load failed: ' + error.message);
-        alert('Could not connect to Coursado cloud data: ' + error.message);
-        return false;
-    }
-
-    if (!data) {
-
-        const { data: newData, error: insertError } =
-            await supabaseClient
-                .from('coursado_data')
-                .insert({
-                    id: 1,
-                    payments: [],
-                    staff: [],
-                    student_attendance: [],
-                    books_stock: {
-                        Juniors: 0,
-                        Kiddos: 0,
-                        Beginners: 0,
-                        Movers: 0,
-                        Flyers: 0,
-                        Supers: 0
-                    }
-                })
-                .select()
-                .single();
-
-        if (insertError) {
-            console.error('Cloud initialization failed:', insertError);
-            setSyncStatus('error', 'Cloud setup failed: ' + insertError.message);
-            alert('Could not initialize Coursado cloud data: ' + insertError.message);
-            return false;
-        }
-
-        payments = newData.payments || [];
-        staffList = newData.staff || [];
-        studentAttendanceList = newData.student_attendance || [];
-        booksStock = newData.books_stock || {};
-
-    } else {
-
-        payments = Array.isArray(data.payments)
-            ? data.payments
-            : [];
-
-        staffList = Array.isArray(data.staff)
-            ? data.staff
-            : [];
-
-        studentAttendanceList = Array.isArray(data.student_attendance)
-            ? data.student_attendance
-            : [];
-
-        booksStock = data.books_stock &&
-            typeof data.books_stock === 'object'
-            ? data.books_stock
-            : {};
-    }
-
-    BOOK_STAGES.forEach(stage => {
-        booksStock[stage] = Math.max(
-            0,
-            parseInt(booksStock[stage], 10) || 0
-        );
-    });
-
-    // Cloud is empty but this device has data -> offer to upload it
-    // instead of replacing it with nothing.
-    let uploadLocal = false;
-
-    const cloudEmpty =
-        payments.length === 0 &&
-        staffList.length === 0 &&
-        studentAttendanceList.length === 0 &&
-        BOOK_STAGES.every(st => !booksStock[st]);
-
-    const localHasData =
-        localSnapshot.payments.length > 0 ||
-        localSnapshot.staff.length > 0 ||
-        localSnapshot.students.length > 0 ||
-        BOOK_STAGES.some(st => parseInt(localSnapshot.books[st], 10) > 0);
-
-    if (!isRefresh && cloudEmpty && localHasData &&
-        confirm('The cloud is empty, but this device has saved data.\n\nUpload this device\'s data to the cloud so it shows on all your devices?')) {
-
-        payments = localSnapshot.payments;
-        staffList = localSnapshot.staff;
-        studentAttendanceList = localSnapshot.students;
-        BOOK_STAGES.forEach(st => {
-            booksStock[st] = Math.max(0, parseInt(localSnapshot.books[st], 10) || 0);
-        });
-        uploadLocal = true;
-    }
-
-    localStorage.setItem(
-        'coursado_dashboard_payments',
-        JSON.stringify(payments)
-    );
-
-    localStorage.setItem(
-        'coursado_dashboard_staff',
-        JSON.stringify(staffList)
-    );
-
-    localStorage.setItem(
-        'coursado_student_attendance',
-        JSON.stringify(studentAttendanceList)
-    );
-
-    localStorage.setItem(
-        'coursado_books_stock',
-        JSON.stringify(booksStock)
-    );
-
-    cloudReady = true;
-
-    if (uploadLocal) {
-        await syncCoursadoToCloud();
-    } else {
-        setSyncStatus('ok', 'Cloud connected');
-    }
-
-    console.log('Coursado cloud data loaded successfully.');
-    console.log('Payments:', payments.length);
-    console.log('Staff:', staffList.length);
-    console.log('Students:', studentAttendanceList.length);
-    console.log('Books:', booksStock);
-
-    return true;
-}
-
-const loginScreen = document.getElementById('loginScreen');
-const loginButton = document.getElementById('loginButton');
-const loginEmail = document.getElementById('loginEmail');
-const loginPassword = document.getElementById('loginPassword');
-const loginError = document.getElementById('loginError');
-
-async function checkCoursadoLogin() {
-
-    const { data, error } =
-        await supabaseClient.auth.getSession();
-
-    if (error) {
-        console.error('Session error:', error);
-    }
-
-    if (data && data.session) {
-        loginScreen.style.display = 'none';
-        return true;
-    }
-
-    loginScreen.style.display = 'flex';
-    setSyncStatus('error', 'Sign in to sync');
-    return false;
-}
-
-// Pick up changes made on another device when you come back to this tab
-document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible' && cloudReady && !syncPending) {
-        const ok = await initializeCoursadoCloud(true);
-        if (ok && window.afterCloudLoad) window.afterCloudLoad();
-    }
-});
-
-// Don't let a refresh/close throw away a save that hasn't reached the cloud yet
-window.addEventListener('beforeunload', e => {
-    if (syncPending) {
-        e.preventDefault();
-        e.returnValue = '';
-    }
-});
-
-loginButton.addEventListener('click', async () => {
-
-    loginError.textContent = '';
-
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value;
-
-    const { error } =
-        await supabaseClient.auth.signInWithPassword({
-            email,
-            password
-        });
-
-    if (error) {
-        console.error('Login error:', error);
-        loginError.textContent = 'Incorrect email or password.';
-        return;
-    }
-
-    loginScreen.style.display = 'none';
-
-    const loaded = await initializeCoursadoCloud();
-
-    if (loaded && window.afterCloudLoad) {
-        window.afterCloudLoad();
-    }
-});
-
-[loginEmail, loginPassword].forEach(input => {
-    input.addEventListener('keydown', e => {
-        if (e.key === 'Enter') loginButton.click();
-    });
-});
 document.addEventListener('DOMContentLoaded', () => {
 
     const paymentModal = document.getElementById('paymentModal');
@@ -410,39 +83,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const dayCheckboxes = document.querySelectorAll('input[name="attendanceDay"]');
 
-    // Today's date in the LOCAL timezone (toISOString() uses UTC and can be a day off)
-    function todayLocal() {
-        const d = new Date();
-        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    }
-
     let monthlyChartInstance = null;
     let lastAddedPayment = null;
 
-    paymentDateInput.value = todayLocal();
+    paymentDateInput.value = new Date().toISOString().split('T')[0];
 
-    // Use the GLOBAL variables (the cloud loader fills these). Start from the
-    // local copy so the page still works while the cloud data is loading.
-    const readLocal = (key, fallback) => {
-        try { return JSON.parse(localStorage.getItem(key)) || fallback; }
-        catch (err) { return fallback; }
-    };
-    payments = readLocal('coursado_dashboard_payments', []);
-    staffList = readLocal('coursado_dashboard_staff', []);
-    studentAttendanceList = readLocal('coursado_student_attendance', []);
+    let payments = JSON.parse(localStorage.getItem('coursado_dashboard_payments')) || [];
+    let staffList = JSON.parse(localStorage.getItem('coursado_dashboard_staff')) || [];
+    let studentAttendanceList = JSON.parse(localStorage.getItem('coursado_student_attendance')) || [];
 
     /* ---------- Books inventory (stages only, no groups) ---------- */
-    booksStock = readLocal('coursado_books_stock', {});
+    const BOOK_STAGES = ['Juniors', 'Kiddos', 'Beginners', 'Movers', 'Flyers', 'Supers'];
+    let booksStock = JSON.parse(localStorage.getItem('coursado_books_stock')) || {};
     BOOK_STAGES.forEach(stage => { booksStock[stage] = Math.max(0, parseInt(booksStock[stage], 10) || 0); });
 
-   function saveBooksStock() {
-    localStorage.setItem(
-        'coursado_books_stock',
-        JSON.stringify(booksStock)
-    );
-
-    queueCloudSync();
-}
+    function saveBooksStock() {
+        localStorage.setItem('coursado_books_stock', JSON.stringify(booksStock));
+    }
 
     /* ---------- Weekly attendance helpers (week = Saturday to Thursday) ---------- */
     const DAY_KEYS = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu'];
@@ -457,17 +114,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const weekKeyView = () => isoDate(viewWeekStart);
 
     // old data had one single week; keep it as the current week
-    function normalizeStudentData() {
-        studentAttendanceList.forEach(s => {
-            if (!s.attendanceByWeek) {
-                s.attendanceByWeek = {};
-                if (s.attendance) s.attendanceByWeek[isoDate(currentWeekStart())] = s.attendance;
-            }
-            delete s.attendance;
-            if (!Array.isArray(s.courseDays)) s.courseDays = [];
-        });
-    }
-    normalizeStudentData();
+    studentAttendanceList.forEach(s => {
+        if (!s.attendanceByWeek) {
+            s.attendanceByWeek = {};
+            if (s.attendance) s.attendanceByWeek[isoDate(currentWeekStart())] = s.attendance;
+        }
+        delete s.attendance;
+    });
 
     function renderWeekHeader() {
         const end = addDays(viewWeekStart, 5);
@@ -670,20 +323,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.updateStaffTiming = function(staffId, day, field, value) {
-    const staff = staffList.find(s => s.id === staffId);
-    if (!staff) return;
+        const staff = staffList.find(s => s.id === staffId);
 
-    ensureStaffShape(staff);
+        if (!staff) return;
 
-    staff.timings[day][field] = value;
+        ensureStaffShape(staff);
 
-    localStorage.setItem(
-        'coursado_dashboard_staff',
-        JSON.stringify(staffList)
-    );
+        staff.timings[day][field] = value;
 
-    queueCloudSync();
-};
+        localStorage.setItem(
+            'coursado_dashboard_staff',
+            JSON.stringify(staffList)
+        );
+    };
 
     window.openTimingModal = function(id) {
         const staff = staffList.find(s => s.id === id);
@@ -734,14 +386,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function saveAndRenderStaff() {
-    localStorage.setItem(
-        'coursado_dashboard_staff',
-        JSON.stringify(staffList)
-    );
+        localStorage.setItem(
+            'coursado_dashboard_staff',
+            JSON.stringify(staffList)
+        );
 
-    queueCloudSync();
-    renderStaffAttendance();
-}
+        renderStaffAttendance();
+    }
 
     function renderStaffAttendance() {
         staffAttendanceTableBody.innerHTML = '';
@@ -749,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (staffList.length === 0) {
             staffAttendanceTableBody.innerHTML = `
                 <tr>
-                    <td colspan="10" style="text-align:center;">
+                    <td colspan="11" style="text-align:center;">
                         No staff members added yet.
                     </td>
                 </tr>
@@ -918,8 +569,6 @@ document.addEventListener('DOMContentLoaded', () => {
             'coursado_student_attendance',
             JSON.stringify(studentAttendanceList)
         );
-
-        queueCloudSync();
 
         renderStudentAttendance();
 
@@ -1097,8 +746,6 @@ document.addEventListener('DOMContentLoaded', () => {
             JSON.stringify(studentAttendanceList)
         );
 
-        queueCloudSync();
-
         renderStudentAttendance();
     };
 
@@ -1121,12 +768,10 @@ document.addEventListener('DOMContentLoaded', () => {
             student.bookTaken = false;
         }
 
-        localStorage.setItem(
-    'coursado_student_attendance',
-    JSON.stringify(studentAttendanceList)
-);
+        localStorage.setItem('coursado_student_attendance', JSON.stringify(studentAttendanceList));
+        saveBooksStock();
 
-saveBooksStock();
+        renderStudentAttendance();
         renderBooks();
     };
 
@@ -1186,8 +831,6 @@ saveBooksStock();
                 JSON.stringify(studentAttendanceList)
             );
 
-            queueCloudSync();
-
             renderStudentAttendance();
         }
     };
@@ -1218,7 +861,7 @@ saveBooksStock();
     categorySelect.addEventListener('change', e => {
 
         if (e.target.value === 'Other') {
-            otherCategoryWrapper.style.display = 'block';
+            otherCategoryWrapper.style.display = 'flex';
 
             otherCategoryText.setAttribute(
                 'required',
@@ -1269,7 +912,8 @@ saveBooksStock();
 
         paymentForm.reset();
 
-        paymentDateInput.value = todayLocal();
+        paymentDateInput.value =
+            new Date().toISOString().split('T')[0];
 
         otherCategoryWrapper.style.display = 'none';
 
@@ -1342,14 +986,14 @@ saveBooksStock();
     };
 
     function saveAndRender() {
-    localStorage.setItem(
-        'coursado_dashboard_payments',
-        JSON.stringify(payments)
-    );
 
-    queueCloudSync();
-    renderAllViews();
-}
+        localStorage.setItem(
+            'coursado_dashboard_payments',
+            JSON.stringify(payments)
+        );
+
+        renderAllViews();
+    }
 
     function renderAllViews() {
 
@@ -1420,7 +1064,8 @@ saveBooksStock();
 
         const uniqueStudents = new Set();
 
-        const currentMonthStr = todayLocal().slice(0, 7);
+        const currentMonthStr =
+            new Date().toISOString().slice(0, 7);
 
         payments.forEach(p => {
 
@@ -2014,7 +1659,8 @@ saveBooksStock();
         }
 
         let csvContent =
-            '\uFEFFStudent Name,Category,Amount (EGP),Balance Due (EGP),Payment Method,Note,Date\n';
+            'data:text/csv;charset=utf-8,' +
+            'Student Name,Category,Amount (EGP),Balance Due (EGP),Payment Method,Note,Date\n';
 
         dataArray.forEach(p => {
 
@@ -2023,9 +1669,9 @@ saveBooksStock();
                 `"${p.category.replace(/"/g, '""')}"`,
                 p.amount,
                 p.balanceDue || 0,
-                `"${String(p.method || '').replace(/"/g, '""')}"`,
+                `"${p.method}"`,
                 `"${(p.note || '').replace(/"/g, '""')}"`,
-                `"${String(p.date || '')}"`
+                `"${p.date}"`
             ];
 
             csvContent +=
@@ -2033,16 +1679,15 @@ saveBooksStock();
                 '\n';
         });
 
-        const blobUrl = URL.createObjectURL(
-            new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        );
+        const encodedUri =
+            encodeURI(csvContent);
 
         const link =
             document.createElement('a');
 
         link.setAttribute(
             'href',
-            blobUrl
+            encodedUri
         );
 
         link.setAttribute(
@@ -2055,8 +1700,6 @@ saveBooksStock();
         link.click();
 
         document.body.removeChild(link);
-
-        URL.revokeObjectURL(blobUrl);
     }
 
     downloadMonthExcelBtn.addEventListener(
@@ -2506,7 +2149,7 @@ saveBooksStock();
         let nPay = 0, nNew = 0, nUpd = 0;
 
         if (doFees) {
-            const today = todayLocal();
+            const today = new Date().toISOString().split('T')[0];
             const fresh = [];
             list.forEach(s => {
                 if (!(s.fee > 0)) return;
@@ -2550,8 +2193,6 @@ saveBooksStock();
             localStorage.setItem('coursado_student_attendance', JSON.stringify(studentAttendanceList));
         }
 
-        queueCloudSync();
-
         saveAndRender();
 
         importPreviewModal.style.display = 'none';
@@ -2564,83 +2205,31 @@ saveBooksStock();
             `<span><i class="fa-solid fa-circle-check"></i> Imported ${parts.join(' and ')}.</span>`;
     });
 
-        function escapeHtml(str) {
+    function escapeHtml(str) {
 
         return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+            .replace(
+                /&/g,
+                '&amp;'
+            )
+            .replace(
+                /</g,
+                '&lt;'
+            )
+            .replace(
+                />/g,
+                '&gt;'
+            )
+            .replace(
+                /"/g,
+                '&quot;'
+            )
+            .replace(
+                /'/g,
+                '&#039;'
+            );
     }
 
-
-    // ---------- DATA BACKUP ----------
-
-    window.backupCoursadoData = function() {
-
-        const backup = {
-            backupDate: new Date().toISOString(),
-
-            payments: JSON.parse(
-                localStorage.getItem('coursado_dashboard_payments') || '[]'
-            ),
-
-            staff: JSON.parse(
-                localStorage.getItem('coursado_dashboard_staff') || '[]'
-            ),
-
-            studentAttendance: JSON.parse(
-                localStorage.getItem('coursado_student_attendance') || '[]'
-            ),
-
-            booksStock: JSON.parse(
-                localStorage.getItem('coursado_books_stock') || '{}'
-            )
-        };
-
-        const blob = new Blob(
-            [JSON.stringify(backup, null, 2)],
-            { type: 'application/json' }
-        );
-
-        const url = URL.createObjectURL(blob);
-
-        const link = document.createElement('a');
-
-        const date = new Date()
-            .toISOString()
-            .split('T')[0];
-
-        link.href = url;
-        link.download = `Coursado_Backup_${date}.json`;
-
-        document.body.appendChild(link);
-
-        link.click();
-
-        document.body.removeChild(link);
-
-        URL.revokeObjectURL(url);
-
-        alert('Your Coursado data has been backed up successfully.');
-    };
-
-
-    // Called after cloud data has been loaded (on login or on page refresh)
-    window.afterCloudLoad = function() {
-        normalizeStudentData();
-        renderAllViews();
-    };
-
-    // Draw whatever is stored locally right away, then refresh from the cloud
     renderAllViews();
-
-    checkCoursadoLogin().then(async loggedIn => {
-        if (loggedIn) {
-            const loaded = await initializeCoursadoCloud();
-            if (loaded) window.afterCloudLoad();
-        }
-    });
 
 });

@@ -10,8 +10,6 @@
     <link rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -45,15 +43,6 @@
 </head>
 
 <body>
-    <div id="loginScreen" style="display:none;">
-    <div class="login-box">
-        <h2>Coursado Login</h2>
-        <input type="email" id="loginEmail" placeholder="Email">
-        <input type="password" id="loginPassword" placeholder="Password">
-        <button id="loginButton">Login</button>
-        <p id="loginError"></p>
-    </div>
-</div>
 
 <div class="app-container">
 
@@ -122,7 +111,6 @@
             </h1>
 
             <div class="user-actions">
-                <span id="syncStatus" class="sync-status">Connecting...</span>
                 <button id="openModalBtn" class="btn primary-btn">
                     <i class="fa-solid fa-plus"></i>
                     <span>Add Payment</span>
@@ -941,7 +929,7 @@
         
         <div id="receiptCard" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.5rem; text-align: left; margin-bottom: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
             <div style="text-align: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 1rem; margin-bottom: 1rem;">
-                <h3 style="color: var(--blue); margin-bottom: 0.2rem;">COURSADO</h3>
+                <h3 style="color: var(--sidebar-bg); margin-bottom: 0.2rem;">COURSADO</h3>
                 <p style="font-size: 0.75rem; color: #64748b;">Official Payment Receipt</p>
             </div>
             <p style="margin-bottom: 0.5rem; font-size: 0.85rem;"><strong>Receipt No:</strong> <span id="recNo"></span></p>
@@ -960,7 +948,6 @@
     </div>
 </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
