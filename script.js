@@ -79,6 +79,7 @@ function queueCloudSync() {
         syncCoursadoToCloud();
     }, 500);
 }
+
 async function initializeCoursadoCloud() {
     const { data, error } = await supabaseClient
         .from('coursado_data')
@@ -100,7 +101,14 @@ async function initializeCoursadoCloud() {
                 payments: [],
                 staff: [],
                 student_attendance: [],
-                books_stock: {}
+                books_stock: {
+                    Juniors: 0,
+                    Kiddos: 0,
+                    Beginners: 0,
+                    Movers: 0,
+                    Flyers: 0,
+                    Supers: 0
+                }
             });
 
         if (insertError) {
@@ -112,14 +120,24 @@ async function initializeCoursadoCloud() {
         payments = [];
         staffList = [];
         studentAttendanceList = [];
-        booksStock = {};
 
-        BOOK_STAGES.forEach(stage => {
-            booksStock[stage] = 0;
-        });
+        booksStock = {
+            Juniors: 0,
+            Kiddos: 0,
+            Beginners: 0,
+            Movers: 0,
+            Flyers: 0,
+            Supers: 0
+        };
     } else {
-        payments = Array.isArray(data.payments) ? data.payments : [];
-        staffList = Array.isArray(data.staff) ? data.staff : [];
+        payments = Array.isArray(data.payments)
+            ? data.payments
+            : [];
+
+        staffList = Array.isArray(data.staff)
+            ? data.staff
+            : [];
+
         studentAttendanceList = Array.isArray(data.student_attendance)
             ? data.student_attendance
             : [];
@@ -129,12 +147,35 @@ async function initializeCoursadoCloud() {
             ? data.books_stock
             : {};
 
-        BOOK_STAGES.forEach(stage => {
-            booksStock[stage] = Math.max(
-                0,
-                parseInt(booksStock[stage], 10) || 0
-            );
-        });
+        booksStock.Juniors = Math.max(
+            0,
+            parseInt(booksStock.Juniors, 10) || 0
+        );
+
+        booksStock.Kiddos = Math.max(
+            0,
+            parseInt(booksStock.Kiddos, 10) || 0
+        );
+
+        booksStock.Beginners = Math.max(
+            0,
+            parseInt(booksStock.Beginners, 10) || 0
+        );
+
+        booksStock.Movers = Math.max(
+            0,
+            parseInt(booksStock.Movers, 10) || 0
+        );
+
+        booksStock.Flyers = Math.max(
+            0,
+            parseInt(booksStock.Flyers, 10) || 0
+        );
+
+        booksStock.Supers = Math.max(
+            0,
+            parseInt(booksStock.Supers, 10) || 0
+        );
     }
 
     localStorage.setItem(
@@ -158,6 +199,8 @@ async function initializeCoursadoCloud() {
     );
 
     renderAllViews();
+
+    console.log('Coursado cloud data loaded successfully.');
 }
 document.addEventListener('DOMContentLoaded', () => {
 
