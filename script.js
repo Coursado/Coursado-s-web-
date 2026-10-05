@@ -49,8 +49,6 @@ let cloudReady = false;
 let cloudSyncTimer = null;
 
 async function syncCoursadoToCloud() {
-    if (!cloudReady) return;
-
     const { error } = await supabaseClient
         .from('coursado_data')
         .upsert({
@@ -66,19 +64,21 @@ async function syncCoursadoToCloud() {
 
     if (error) {
         console.error('Cloud sync failed:', error);
+        alert('Cloud save failed: ' + error.message);
+        return false;
     }
+
+    console.log('Coursado data saved to Supabase.');
+    return true;
 }
 
 function queueCloudSync() {
-    if (!cloudReady) return;
-
     clearTimeout(cloudSyncTimer);
 
     cloudSyncTimer = setTimeout(() => {
         syncCoursadoToCloud();
     }, 500);
 }
-
 async function initializeCoursadoCloud() {
     const { data, error } = await supabaseClient
         .from('coursado_data')
@@ -118,14 +118,8 @@ async function initializeCoursadoCloud() {
             booksStock[stage] = 0;
         });
     } else {
-        payments = Array.isArray(data.payments)
-            ? data.payments
-            : [];
-
-        staffList = Array.isArray(data.staff)
-            ? data.staff
-            : [];
-
+        payments = Array.isArray(data.payments) ? data.payments : [];
+        staffList = Array.isArray(data.staff) ? data.staff : [];
         studentAttendanceList = Array.isArray(data.student_attendance)
             ? data.student_attendance
             : [];
@@ -162,8 +156,6 @@ async function initializeCoursadoCloud() {
         'coursado_books_stock',
         JSON.stringify(booksStock)
     );
-
-    cloudReady = true;
 
     renderAllViews();
 }
