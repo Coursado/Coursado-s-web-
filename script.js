@@ -1,3 +1,149 @@
+const SUPABASE_URL = 'https://jsvlkwsozsgjmicibbjs.supabase.co';
+
+const SUPABASE_KEY = 'sb_publishable_xj-eWTiuq5_M6Kt3CnecZQ_NJc3YaRY';
+
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
+const loginScreen = document.getElementById('loginScreen');
+const loginButton = document.getElementById('loginButton');
+const loginEmail = document.getElementById('loginEmail');
+const loginPassword = document.getElementById('loginPassword');
+const loginError = document.getElementById('loginError');
+
+async function checkCoursadoLogin() {
+    const { data } = await supabaseClient.auth.getSession();
+
+    if (data.session) {
+        loginScreen.style.display = 'none';
+        return true;
+    }
+
+    loginScreen.style.display = 'flex';
+    return false;
+}
+
+loginButton.addEventListener('click', async () => {
+    loginError.textContent = '';
+
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+
+    const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+    });
+
+    if (error) {
+        loginError.textContent = 'Incorrect email or password.';
+        return;
+    }
+
+    loginScreen.style.display = 'none';
+
+    await initializeCoursadoCloud();
+});
+
+let cloudReady = false;
+let cloudSyncTimer = null;
+
+async function syncCoursadoToCloud() {
+    if (!cloudReady) return;
+
+    const { error } = await supabaseClient
+        .from('coursado_data')
+        .upsert({
+            id: 1,
+            payments: payments,
+            staff: staffList,
+            student_attendance: studentAttendanceList,
+            books_stock: booksStock,
+            updated_at: new Date().toISOString()
+        }, {
+            onConflict: 'id'
+        });
+
+    if (error) {
+        console.error('Cloud sync failed:', error);
+    }
+}
+
+function queueCloudSync() {
+    if (!cloudReady) return;
+
+    clearTimeout(cloudSyncTimer);
+
+    cloudSyncTimer = setTimeout(() => {
+        syncCoursadoToCloud();
+    }, 500);
+}
+
+async function initializeCoursadoCloud() {
+    const { data, error } = await supabaseClient
+        .from('coursado_data')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+    if (error) {
+        console.error('Cloud loading failed:', error);
+        alert('Could not load Coursado data from the cloud.');
+        return;
+    }
+
+    if (data) {
+        payments = Array.isArray(data.payments)
+            ? data.payments
+            : [];
+
+        staffList = Array.isArray(data.staff)
+            ? data.staff
+            : [];
+
+        studentAttendanceList = Array.isArray(data.student_attendance)
+            ? data.student_attendance
+            : [];
+
+        booksStock = data.books_stock &&
+            typeof data.books_stock === 'object'
+            ? data.books_stock
+            : {};
+
+        BOOK_STAGES.forEach(stage => {
+            booksStock[stage] = Math.max(
+                0,
+                parseInt(booksStock[stage], 10) || 0
+            );
+        });
+
+        localStorage.setItem(
+            'coursado_dashboard_payments',
+            JSON.stringify(payments)
+        );
+
+        localStorage.setItem(
+            'coursado_dashboard_staff',
+            JSON.stringify(staffList)
+        );
+
+        localStorage.setItem(
+            'coursado_student_attendance',
+            JSON.stringify(studentAttendanceList)
+        );
+
+        localStorage.setItem(
+            'coursado_books_stock',
+            JSON.stringify(booksStock)
+        );
+    } else {
+        await syncCoursadoToCloud();
+    }
+
+    cloudReady = true;
+
+    renderAllViews();
+}
 document.addEventListener('DOMContentLoaded', () => {
 
     const paymentModal = document.getElementById('paymentModal');
@@ -2268,6 +2414,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 
-    renderAllViews();
-
+checkCoursadoLogin().then(loggedIn => {
+    if (loggedIn) {
+        initializeCoursadoCloud();
+    }
+});
 });

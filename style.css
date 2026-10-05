@@ -698,3 +698,46 @@ td.balance-due {
 td.balance-clear {
     color: var(--muted);
 }
+#loginScreen {
+    position: fixed;
+    inset: 0;
+    background: #061b20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+}
+
+.login-box {
+    width: 360px;
+    padding: 35px;
+    background: #100e0b;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+}
+
+.login-box h2 {
+    margin-bottom: 25px;
+}
+
+.login-box input {
+    width: 100%;
+    padding: 13px;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    border: 1px solid #ffffff;
+    box-sizing: border-box;
+}
+
+.login-box button {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+#loginError {
+    color: #4c4cca;
+    margin-top: 12px;
+}
