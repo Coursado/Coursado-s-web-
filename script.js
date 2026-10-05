@@ -80,12 +80,6 @@ function queueCloudSync() {
 }
 
 async function initializeCoursadoCloud() {
-    const localHasData =
-        payments.length > 0 ||
-        staffList.length > 0 ||
-        studentAttendanceList.length > 0 ||
-        Object.values(booksStock).some(value => Number(value) > 0);
-
     const { data, error } = await supabaseClient
         .from('coursado_data')
         .select('*')
@@ -94,61 +88,60 @@ async function initializeCoursadoCloud() {
 
     if (error) {
         console.error('Cloud loading failed:', error);
-        alert('Could not load Coursado data from the cloud.');
+        alert('Could not connect to Coursado cloud data.');
         return;
     }
 
     if (!data) {
-        cloudReady = true;
+        const { error: insertError } = await supabaseClient
+            .from('coursado_data')
+            .insert({
+                id: 1,
+                payments: [],
+                staff: [],
+                student_attendance: [],
+                books_stock: {}
+            });
 
-        if (localHasData) {
-            await syncCoursadoToCloud();
+        if (insertError) {
+            console.error('Cloud initialization failed:', insertError);
+            alert('Could not initialize Coursado cloud data.');
+            return;
         }
 
-        renderAllViews();
-        return;
+        payments = [];
+        staffList = [];
+        studentAttendanceList = [];
+        booksStock = {};
+
+        BOOK_STAGES.forEach(stage => {
+            booksStock[stage] = 0;
+        });
+    } else {
+        payments = Array.isArray(data.payments)
+            ? data.payments
+            : [];
+
+        staffList = Array.isArray(data.staff)
+            ? data.staff
+            : [];
+
+        studentAttendanceList = Array.isArray(data.student_attendance)
+            ? data.student_attendance
+            : [];
+
+        booksStock = data.books_stock &&
+            typeof data.books_stock === 'object'
+            ? data.books_stock
+            : {};
+
+        BOOK_STAGES.forEach(stage => {
+            booksStock[stage] = Math.max(
+                0,
+                parseInt(booksStock[stage], 10) || 0
+            );
+        });
     }
-
-    const cloudHasData =
-        (Array.isArray(data.payments) && data.payments.length > 0) ||
-        (Array.isArray(data.staff) && data.staff.length > 0) ||
-        (Array.isArray(data.student_attendance) && data.student_attendance.length > 0) ||
-        (
-            data.books_stock &&
-            typeof data.books_stock === 'object' &&
-            Object.values(data.books_stock).some(value => Number(value) > 0)
-        );
-
-    if (!cloudHasData && localHasData) {
-        cloudReady = true;
-        await syncCoursadoToCloud();
-        renderAllViews();
-        return;
-    }
-
-    payments = Array.isArray(data.payments)
-        ? data.payments
-        : [];
-
-    staffList = Array.isArray(data.staff)
-        ? data.staff
-        : [];
-
-    studentAttendanceList = Array.isArray(data.student_attendance)
-        ? data.student_attendance
-        : [];
-
-    booksStock = data.books_stock &&
-        typeof data.books_stock === 'object'
-        ? data.books_stock
-        : {};
-
-    BOOK_STAGES.forEach(stage => {
-        booksStock[stage] = Math.max(
-            0,
-            parseInt(booksStock[stage], 10) || 0
-        );
-    });
 
     localStorage.setItem(
         'coursado_dashboard_payments',
@@ -174,10 +167,6 @@ async function initializeCoursadoCloud() {
 
     renderAllViews();
 }
-
-    cloudReady = true;
-
-    renderAllViews();
 document.addEventListener('DOMContentLoaded', () => {
 
     const paymentModal = document.getElementById('paymentModal');
@@ -756,6 +745,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'coursado_student_attendance',
             JSON.stringify(studentAttendanceList)
         );
+
+        queueCloudSync();
 
         renderStudentAttendance();
 
@@ -2468,4 +2459,5 @@ checkCoursadoLogin().then(loggedIn => {
         initializeCoursadoCloud();
     }
 });
+
 });
