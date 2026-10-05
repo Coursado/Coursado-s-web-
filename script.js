@@ -243,9 +243,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let booksStock = JSON.parse(localStorage.getItem('coursado_books_stock')) || {};
     BOOK_STAGES.forEach(stage => { booksStock[stage] = Math.max(0, parseInt(booksStock[stage], 10) || 0); });
 
-    function saveBooksStock() {
-        localStorage.setItem('coursado_books_stock', JSON.stringify(booksStock));
-    }
+   function saveBooksStock() {
+    localStorage.setItem(
+        'coursado_books_stock',
+        JSON.stringify(booksStock)
+    );
+
+    queueCloudSync();
+}
 
     /* ---------- Weekly attendance helpers (week = Saturday to Thursday) ---------- */
     const DAY_KEYS = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu'];
@@ -469,19 +474,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.updateStaffTiming = function(staffId, day, field, value) {
-        const staff = staffList.find(s => s.id === staffId);
+    const staff = staffList.find(s => s.id === staffId);
+    if (!staff) return;
 
-        if (!staff) return;
+    ensureStaffShape(staff);
 
-        ensureStaffShape(staff);
+    staff.timings[day][field] = value;
 
-        staff.timings[day][field] = value;
+    localStorage.setItem(
+        'coursado_dashboard_staff',
+        JSON.stringify(staffList)
+    );
 
-        localStorage.setItem(
-            'coursado_dashboard_staff',
-            JSON.stringify(staffList)
-        );
-    };
+    queueCloudSync();
+};
 
     window.openTimingModal = function(id) {
         const staff = staffList.find(s => s.id === id);
@@ -532,13 +538,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function saveAndRenderStaff() {
-        localStorage.setItem(
-            'coursado_dashboard_staff',
-            JSON.stringify(staffList)
-        );
+    localStorage.setItem(
+        'coursado_dashboard_staff',
+        JSON.stringify(staffList)
+    );
 
-        renderStaffAttendance();
-    }
+    queueCloudSync();
+    renderStaffAttendance();
+}
 
     function renderStaffAttendance() {
         staffAttendanceTableBody.innerHTML = '';
@@ -892,6 +899,8 @@ document.addEventListener('DOMContentLoaded', () => {
             JSON.stringify(studentAttendanceList)
         );
 
+        queueCloudSync();
+
         renderStudentAttendance();
     };
 
@@ -914,11 +923,13 @@ document.addEventListener('DOMContentLoaded', () => {
             student.bookTaken = false;
         }
 
-        localStorage.setItem('coursado_student_attendance', JSON.stringify(studentAttendanceList));
-        saveBooksStock();
+        localStorage.setItem(
+    'coursado_student_attendance',
+    JSON.stringify(studentAttendanceList)
+);
 
-        renderStudentAttendance();
-        renderBooks();
+queueCloudSync();
+saveBooksStock();
     };
 
     function renderBooks() {
@@ -976,6 +987,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 'coursado_student_attendance',
                 JSON.stringify(studentAttendanceList)
             );
+
+            queueCloudSync();
 
             renderStudentAttendance();
         }
@@ -1132,14 +1145,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function saveAndRender() {
+    localStorage.setItem(
+        'coursado_dashboard_payments',
+        JSON.stringify(payments)
+    );
 
-        localStorage.setItem(
-            'coursado_dashboard_payments',
-            JSON.stringify(payments)
-        );
-
-        renderAllViews();
-    }
+    queueCloudSync();
+    renderAllViews();
+}
 
     function renderAllViews() {
 
@@ -2338,6 +2351,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             localStorage.setItem('coursado_student_attendance', JSON.stringify(studentAttendanceList));
         }
+
+        queueCloudSync();
 
         saveAndRender();
 
