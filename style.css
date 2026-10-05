@@ -711,9 +711,9 @@ td.balance-clear {
 .login-box {
     width: 360px;
     padding: 35px;
-    background: #100e0b;
+    background: #3c499f;
     border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    box-shadow: 0 20px 60px rgba(238, 238, 238, 0.4);
 }
 
 .login-box h2 {
