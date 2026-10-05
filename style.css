@@ -706,18 +706,22 @@ td.balance-clear {
     align-items: center;
     justify-content: center;
     z-index: 99999;
+    padding: 20px;
 }
 
 .login-box {
-    width: 360px;
+    width: 100%;
+    max-width: 360px;
     padding: 35px;
     background: #3c499f;
     border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(238, 238, 238, 0.4);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    color: var(--white);
 }
 
 .login-box h2 {
     margin-bottom: 25px;
+    color: var(--white);
 }
 
 .login-box input {
@@ -727,6 +731,7 @@ td.balance-clear {
     border-radius: 10px;
     border: 1px solid #ffffff;
     box-sizing: border-box;
+    font-size: 14px;
 }
 
 .login-box button {
@@ -735,9 +740,18 @@ td.balance-clear {
     border: none;
     border-radius: 10px;
     cursor: pointer;
+    background: var(--white);
+    color: #3c499f;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.login-box button:hover {
+    background: #e0e7ff;
 }
 
 #loginError {
-    color: #4c4cca;
+    color: #fecaca;
     margin-top: 12px;
+    font-size: 13px;
 }
