@@ -32,12 +32,35 @@ let booksStock = {
     Supers: 0
 };
 
+let syncPending = false;
+
+function setSyncStatus(state, message) {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    el.className = 'sync-status ' + state;
+    el.textContent = message;
+    el.title = message;
+}
+
+function readLocalJSON(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) || fallback; }
+    catch (err) { return fallback; }
+}
+
 function queueCloudSync() {
     clearTimeout(cloudSyncTimer);
 
+    if (!cloudReady) {
+        setSyncStatus('error', 'Not synced - saved on this device only');
+        return;
+    }
+
+    syncPending = true;
+    setSyncStatus('saving', 'Saving...');
+
     cloudSyncTimer = setTimeout(async () => {
         await syncCoursadoToCloud();
-    }, 500);
+    }, 300);
 }
 
 async function syncCoursadoToCloud() {
@@ -46,6 +69,7 @@ async function syncCoursadoToCloud() {
     // otherwise empty/stale local data would overwrite the real records.
     if (!cloudReady) {
         console.warn('Cloud sync skipped: cloud data not loaded yet.');
+        setSyncStatus('error', 'Not synced - saved on this device only');
         return false;
     }
 
@@ -64,17 +88,29 @@ async function syncCoursadoToCloud() {
 
     if (error) {
         console.error('Cloud sync failed:', error);
+        setSyncStatus('error', 'Cloud save failed: ' + error.message);
         alert('Cloud save failed: ' + error.message);
         return false;
     }
 
+    syncPending = false;
+    setSyncStatus('ok', 'Saved to cloud');
     console.log('Coursado data saved to Supabase.');
     return true;
 }
 
-async function initializeCoursadoCloud() {
+async function initializeCoursadoCloud(isRefresh = false) {
 
     console.log('Loading Coursado data from Supabase...');
+    setSyncStatus('saving', 'Loading from cloud...');
+
+    // Keep a copy of what this device has, so it is never silently lost
+    const localSnapshot = {
+        payments: readLocalJSON('coursado_dashboard_payments', []),
+        staff: readLocalJSON('coursado_dashboard_staff', []),
+        students: readLocalJSON('coursado_student_attendance', []),
+        books: readLocalJSON('coursado_books_stock', {})
+    };
 
     const { data, error } = await supabaseClient
         .from('coursado_data')
@@ -84,6 +120,7 @@ async function initializeCoursadoCloud() {
 
     if (error) {
         console.error('Cloud loading failed:', error);
+        setSyncStatus('error', 'Cloud load failed: ' + error.message);
         alert('Could not connect to Coursado cloud data: ' + error.message);
         return false;
     }
@@ -112,6 +149,7 @@ async function initializeCoursadoCloud() {
 
         if (insertError) {
             console.error('Cloud initialization failed:', insertError);
+            setSyncStatus('error', 'Cloud setup failed: ' + insertError.message);
             alert('Could not initialize Coursado cloud data: ' + insertError.message);
             return false;
         }
@@ -148,6 +186,34 @@ async function initializeCoursadoCloud() {
         );
     });
 
+    // Cloud is empty but this device has data -> offer to upload it
+    // instead of replacing it with nothing.
+    let uploadLocal = false;
+
+    const cloudEmpty =
+        payments.length === 0 &&
+        staffList.length === 0 &&
+        studentAttendanceList.length === 0 &&
+        BOOK_STAGES.every(st => !booksStock[st]);
+
+    const localHasData =
+        localSnapshot.payments.length > 0 ||
+        localSnapshot.staff.length > 0 ||
+        localSnapshot.students.length > 0 ||
+        BOOK_STAGES.some(st => parseInt(localSnapshot.books[st], 10) > 0);
+
+    if (!isRefresh && cloudEmpty && localHasData &&
+        confirm('The cloud is empty, but this device has saved data.\n\nUpload this device\'s data to the cloud so it shows on all your devices?')) {
+
+        payments = localSnapshot.payments;
+        staffList = localSnapshot.staff;
+        studentAttendanceList = localSnapshot.students;
+        BOOK_STAGES.forEach(st => {
+            booksStock[st] = Math.max(0, parseInt(localSnapshot.books[st], 10) || 0);
+        });
+        uploadLocal = true;
+    }
+
     localStorage.setItem(
         'coursado_dashboard_payments',
         JSON.stringify(payments)
@@ -169,6 +235,12 @@ async function initializeCoursadoCloud() {
     );
 
     cloudReady = true;
+
+    if (uploadLocal) {
+        await syncCoursadoToCloud();
+    } else {
+        setSyncStatus('ok', 'Cloud connected');
+    }
 
     console.log('Coursado cloud data loaded successfully.');
     console.log('Payments:', payments.length);
@@ -200,8 +272,25 @@ async function checkCoursadoLogin() {
     }
 
     loginScreen.style.display = 'flex';
+    setSyncStatus('error', 'Sign in to sync');
     return false;
 }
+
+// Pick up changes made on another device when you come back to this tab
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && cloudReady && !syncPending) {
+        const ok = await initializeCoursadoCloud(true);
+        if (ok && window.afterCloudLoad) window.afterCloudLoad();
+    }
+});
+
+// Don't let a refresh/close throw away a save that hasn't reached the cloud yet
+window.addEventListener('beforeunload', e => {
+    if (syncPending) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
 
 loginButton.addEventListener('click', async () => {
 
